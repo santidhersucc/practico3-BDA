@@ -2,7 +2,7 @@
 
 **Fecha:** Octubre 2026
 **Proyecto:** Trabajo Práctico Integrador MongoDB - Base de Datos Aplicada
-**Integrantes:** Enzo Parra, Santiago Dhers, Tomas Vogt, Santino Vazquez de Noova
+**Integrantes:** Enzo Parra, Santiago Dhers, Tomas Vogt, Santino Vazquez de Novoa
 
 ---
 
@@ -27,6 +27,7 @@ Esa dispersión produce cuatro problemas concretos:
 - No hay **métricas** para decidir: tiempos de resolución, incumplimientos y satisfacción quedan sin medir.
 
 **Actores involucrados:**
+
 | Actor | Rol | Qué hace en el sistema |
 | --- | --- | --- |
 | Solicitante | Usuario final (docente, administrativo, estudiante) | Crea tickets, comenta, consulta su estado y valora la atención |
@@ -35,15 +36,15 @@ Esa dispersión produce cuatro problemas concretos:
 | Administrador | Define el catálogo de servicios | Crea y edita categorías, campos personalizados, SLA y flujos |
 | Sistema | Proceso automático | Calcula plazos, marca incumplimientos y numera los tickets atómicamente |
 
-## 3. Justificación del paradigma: Por qué un modelo documental
+## 3. Justificación del paradigma: por qué un modelo documental
 
-Un ticket es un **agregado** que casi siempre se lee y se modifica completo, y cuya parte variable depende de la categoría; esas dos propiedades son las que más favorecen al modelo documental. En SQL, representar lo mismo exige fragmentar el ticket en varias tablas y recomponerlo con costosos `JOINs` en cada lectura.
+Un ticket es un **agregado** que casi siempre se lee y se modifica completo, y cuya parte variable depende de la categoría; esas dos propiedades son las que más favorecen al modelo documental. En SQL, representar lo mismo exige fragmentar el ticket en varias tablas y recomponerlo con `JOIN`s en cada lectura.
 
 | Aspecto | Diseño relacional | Diseño documental (Sentinel) |
 | --- | --- | --- |
 | Campos variables por categoría | Tabla EAV (`ticket_id`, `clave`, `valor` texto) o muchas columnas NULL. | Subdocumento `campos_personalizados` con tipos nativos. |
 | Alta de categoría nueva | Nuevas filas de metadatos y migraciones de esquema (`ALTER TABLE`). | Un documento nuevo en `categorias`; esquema dinámico en `tickets`. |
-| Leer un ticket completo | Join entre 6 tablas (tickets, valores, comentarios, historial, adjuntos). | Un `findOne` sobre un único documento. |
+| Leer un ticket completo | Join entre 5 tablas (tickets, valores de campos, comentarios, historial, adjuntos). | Un `findOne` sobre un único documento. |
 | Evolución del modelo | Cada cambio exige coordinar esquema y código. | Versionado de esquema (`schema_version`) en los documentos. |
 
 La justificación no es que MongoDB sea mejor en general, sino que **este dominio tiene la forma exacta para la que fue pensado**: agregados con partes anidadas, estructura variable por tipo y un esquema que evoluciona naturalmente con el servicio.
@@ -57,159 +58,189 @@ La justificación no es que MongoDB sea mejor en general, sino que **este domini
 | RF-03 | Listar tickets con filtros (estado, prioridad, agente) y paginación. | Núcleo |
 | RF-04 | Actualizar datos y cambiar estado respetando las transiciones permitidas. | Núcleo |
 | RF-05 | Agregar comentarios actualizando contadores y SLA de primera respuesta atómicamente. | Núcleo |
-| RF-06 | Asignar un ticket a un agente verificando capacidad máxima (Transaccionalidad). | Núcleo |
+| RF-06 | Asignar un ticket a un agente verificando capacidad máxima (transacción). | Núcleo |
 | RF-07 | Calcular límites de SLA al crear el ticket y registrar cumplimiento. | Núcleo |
 | RF-08 | Administrar categorías (campos, transiciones, tiempos SLA). | Núcleo |
+| RF-09 | Eliminar un ticket (solo en estado `nuevo` o `cancelado`); el resto se cancela, no se borra. | Núcleo |
+| RF-10 | Registrar la encuesta de satisfacción cuando el ticket se cierra. | Complementario |
 
 ## 5. Casos de uso y alcance sobre colecciones
 
 Se identifican casos de uso críticos para el modelado transaccional y atómico:
 *   **CU-01 Crear ticket:** El solicitante elige la categoría y completa la plantilla. El sistema numera atómicamente (`contadores`), calcula el SLA y guarda (`tickets`).
-*   **CU-02 Asignar/Reasignar (Transaccional):** El supervisor elige al agente. El sistema verifica capacidad y actualiza el `agente_id` en el ticket y la `carga_actual` en el agente simultáneamente (`tickets`, `agentes`).
+*   **CU-02 Asignar/Reasignar (transaccional):** El supervisor elige al agente. El sistema verifica capacidad y, en una misma transacción, actualiza `agente` en el ticket, incrementa la `carga_actual` del agente nuevo y, si es una reasignación, decrementa la del agente anterior (`tickets`, `agentes`).
 *   **CU-03 Comentar:** El agente agrega una respuesta, añadiéndola al arreglo de comentarios y actualizando las métricas en un solo paso (`tickets`).
+*   **CU-04 Resolver/Cerrar:** Al pasar a `resuelto` o `cancelado`, se libera la carga del agente (`carga_actual - 1`) junto con el cambio de estado. Mismo mecanismo transaccional que CU-02.
 
 ---
 
-## 6. Entidades, Colecciones y Estructura de Documentos
+## 6. Entidades, colecciones y estructura de documentos
 
-El modelo cuenta con cinco colecciones para balancear flexibilidad y rendimiento.
+El modelo cuenta con cinco colecciones para balancear flexibilidad y rendimiento. Los ejemplos están escritos en sintaxis de `mongosh` (con `ObjectId(...)` e `ISODate(...)`), por eso no son JSON estricto.
 
-### Colección `tickets` (Entidad Principal)
+### Colección `tickets` (entidad principal)
 Almacena toda la información del incidente. Los campos opcionales pueden estar ausentes y las consultas lo contemplan.
-*   **Obligatorios:** `numero`, `titulo`, `descripcion`, `categoria`, `estado`, `solicitante`, `sla`, `comentarios`, `historial`.
-*   **Opcionales:** `agente` (hasta ser asignado), `etiquetas`, `adjuntos`, `satisfaccion`.
+*   **Obligatorios:** `numero`, `titulo`, `descripcion`, `categoria`, `prioridad`, `estado`, `solicitante`, `sla`, `comentarios`, `historial`, `metricas`, `creado`, `actualizado`, `schema_version`.
+*   **Opcionales:** `agente` (hasta ser asignado), `campos_personalizados` (según la categoría), `etiquetas`, `adjuntos`, `satisfaccion`, `resuelto_en`, `sla.primera_respuesta_en`.
 
-```json
+```javascript
 {
-  "_id": ObjectId("66f1a2b3c4d5e6f7a8b9c0d1"),
-  "numero": "INC-2026-000142",
-  "titulo": "La notebook no enciende tras un corte de luz",
-  "descripcion": "Desde el lunes no da video ni enciende el LED de carga.",
-  "categoria": { "codigo": "HW_FALLA", "nombre": "Falla de hardware" },
-  "prioridad": "alta",
-  "estado": "en_progreso",
-  "solicitante": {
-    "cliente_id": ObjectId("66f1a2b3c4d5e6f7a8b9b001"),
-    "nombre": "Marta Quiroga",
-    "email": "marta.quiroga@org.edu",
-    "sede": "Sede Norte"
+  _id: ObjectId("66f1a2b3c4d5e6f7a8b9c0d1"),
+  numero: "INC-2026-000142",
+  titulo: "La notebook no enciende tras un corte de luz",
+  descripcion: "Desde el lunes no da video ni enciende el LED de carga.",
+  categoria: { codigo: "HW_FALLA", nombre: "Falla de hardware" },
+  prioridad: "alta",
+  estado: "en_progreso",
+  solicitante: {
+    cliente_id: ObjectId("66f1a2b3c4d5e6f7a8b9b001"),
+    nombre: "Marta Quiroga",
+    email: "marta.quiroga@org.edu",
+    sede: "Sede Norte"
   },
-  "agente": {
-    "agente_id": ObjectId("66f1a2b3c4d5e6f7a8b9a003"),
-    "nombre": "Diego Paz"
+  agente: {
+    agente_id: ObjectId("66f1a2b3c4d5e6f7a8b9a003"),
+    nombre: "Diego Paz"
   },
-  "campos_personalizados": {
-    "equipo": { "inventario": "INV-004512", "tipo": "notebook", "marca": "Lenovo" },
-    "sintoma": "no_enciende",
-    "garantia_vigente": true
+  campos_personalizados: {
+    equipo: { inventario: "INV-004512", tipo: "notebook", marca: "Lenovo" },
+    sintoma: "no_enciende",
+    garantia_vigente: true
   },
-  "sla": {
-    "respuesta_limite": ISODate("2026-10-19T13:12:00Z"),
-    "resolucion_limite": ISODate("2026-10-19T20:12:00Z"),
-    "incumplido": false
+  etiquetas: ["corte_de_luz", "notebook"],
+  sla: {
+    respuesta_limite: ISODate("2026-10-19T13:12:00Z"),
+    resolucion_limite: ISODate("2026-10-19T20:12:00Z"),
+    primera_respuesta_en: ISODate("2026-10-19T12:40:00Z"),
+    incumplido: false
   },
-  "comentarios": [
+  comentarios: [
     {
-      "autor": { "tipo": "agente", "nombre": "Diego Paz" },
-      "texto": "Voy a retirar el equipo para probar la fuente.",
-      "fecha": ISODate("2026-10-19T12:40:00Z")
+      autor: { tipo: "agente", nombre: "Diego Paz" },
+      texto: "Voy a retirar el equipo para probar la fuente.",
+      fecha: ISODate("2026-10-19T12:40:00Z")
     }
   ],
-  "historial": [
-    { "fecha": ISODate("2026-10-19T12:12:00Z"), "tipo": "estado", "de": null, "a": "nuevo" }
+  historial: [
+    { fecha: ISODate("2026-10-19T12:12:00Z"), tipo: "estado", de: null, a: "nuevo" },
+    { fecha: ISODate("2026-10-19T12:20:00Z"), tipo: "estado", de: "nuevo", a: "asignado" },
+    { fecha: ISODate("2026-10-19T12:35:00Z"), tipo: "estado", de: "asignado", a: "en_progreso" }
   ],
-  "metricas": { "cant_comentarios": 1, "reaperturas": 0 },
-  "schema_version": 1
+  metricas: { cant_comentarios: 1, reaperturas: 0 },
+  creado: ISODate("2026-10-19T12:12:00Z"),
+  actualizado: ISODate("2026-10-19T12:40:00Z"),
+  schema_version: 1
 }
 ```
 
-### Colección `categorias` (Plantillas de Servicio)
+Los campos `creado`, `actualizado`, `resuelto_en` y `sla.primera_respuesta_en` se agregaron respecto a la versión anterior: sin ellos no se pueden calcular el tiempo medio de resolución ni el cumplimiento del SLA de primera respuesta, que son indicadores comprometidos en la sección 11.
+
+### Colección `categorias` (plantillas de servicio)
 Define qué datos pide cada tipo de ticket, qué plazos se prometen y qué transiciones son válidas.
-```json
+```javascript
 {
-  "_id": "HW_FALLA",
-  "nombre": "Falla de hardware",
-  "activa": true,
-  "campos_personalizados": [
-    { "clave": "equipo.inventario", "tipo": "string", "obligatorio": true },
-    { "clave": "sintoma", "tipo": "enum", "opciones": ["no_enciende", "lento", "ruido"] }
+  _id: "HW_FALLA",
+  nombre: "Falla de hardware",
+  activa: true,
+  campos_personalizados: [
+    { clave: "equipo.inventario", tipo: "string", obligatorio: true },
+    { clave: "sintoma", tipo: "enum", opciones: ["no_enciende", "lento", "ruido"] },
+    { clave: "garantia_vigente", tipo: "bool", obligatorio: false }
   ],
-  "sla": {
-    "alta": { "respuesta_min": 60, "resolucion_min": 480 }
+  sla: {
+    critica: { respuesta_min: 15,  resolucion_min: 120 },
+    alta:    { respuesta_min: 60,  resolucion_min: 480 },
+    media:   { respuesta_min: 240, resolucion_min: 1440 },
+    baja:    { respuesta_min: 480, resolucion_min: 4320 }
   },
-  "transiciones": {
-    "nuevo": ["asignado", "cancelado"],
-    "asignado": ["en_progreso", "cancelado"]
+  transiciones: {
+    nuevo: ["asignado", "cancelado"],
+    asignado: ["en_progreso", "cancelado"],
+    en_progreso: ["en_espera", "resuelto", "cancelado"],
+    en_espera: ["en_progreso", "cancelado"],
+    resuelto: ["cerrado", "en_progreso"],
+    cerrado: [],
+    cancelado: []
   }
 }
 ```
+La transición `resuelto → en_progreso` representa una reapertura y es la que incrementa `metricas.reaperturas`.
 
-### Otras Colecciones Auxiliares
-*   **`agentes`:** Personal de soporte. Guarda `carga_actual` como valor transaccional.
-```json
-  {
-  "_id": ObjectId("66f1a2b3c4d5e6f7a8b9a003"),
-  "nombre": "Diego Paz",
-  "email": "diego.paz@org.edu",
-  "rol": "tecnico",
-  "nivel": 2,
-  "habilidades": ["hardware", "impresoras"],
-  "sede_base": "Sede Norte",
-  "turno": { dias: [1, 2, 3, 4, 5], desde: "08:00", hasta: "16:00" },
-  'capacidad_maxima": 8,
-  "carga_actual": 5,
-  "activo": true
-  }
+### Otras colecciones auxiliares
+*   **`agentes`:** Personal de soporte. Guarda `carga_actual` como valor calculado y transaccional.
+```javascript
+{
+  _id: ObjectId("66f1a2b3c4d5e6f7a8b9a003"),
+  nombre: "Diego Paz",
+  email: "diego.paz@org.edu",
+  rol: "tecnico",
+  nivel: 2,
+  habilidades: ["hardware", "impresoras"],
+  sede_base: "Sede Norte",
+  turno: { dias: [1, 2, 3, 4, 5], desde: "08:00", hasta: "16:00" },
+  capacidad_maxima: 8,
+  carga_actual: 5,
+  activo: true
+}
 ```
 *   **`clientes`:** Solicitantes. Embebe sus `equipos` (1 a 5 por persona) para rápida lectura.
-```json
+```javascript
 {
-  "_id": ObjectId("66f1a2b3c4d5e6f7a8b9b001"),
-  "nombre": "Marta Quiroga",
-  "email": "marta.quiroga@org.edu",
-  "tipo": "docente",
-  "area": "Departamento de Matemática",
-  "sede": "Sede Norte",
-  "prioritario": false,
-  "equipos": [
+  _id: ObjectId("66f1a2b3c4d5e6f7a8b9b001"),
+  nombre: "Marta Quiroga",
+  email: "marta.quiroga@org.edu",
+  tipo: "docente",
+  area: "Departamento de Matemática",
+  sede: "Sede Norte",
+  prioritario: false,
+  equipos: [
     { inventario: "INV-004512", tipo: "notebook", marca: "Lenovo", modelo: "T14", garantia_hasta: ISODate("2027-03-31T00:00:00Z") }
   ],
-  "creado": ISODate("2025-02-10T11:00:00Z")
+  creado: ISODate("2025-02-10T11:00:00Z")
+}
 ```
-*   **`contadores`:** Resuelve la numeración correlativa (`INC-2026-XXX`) mediante un documento simple `{ _id: "ticket-2026", valor: 142 }`.
-```json
-{ "_id": "ticket-2026", valor: 142 }
-
+*   **`contadores`:** Resuelve la numeración correlativa (`INC-2026-XXXXXX`) mediante un documento simple por año.
+```javascript
+{ _id: "ticket-2026", valor: 142 }
 ```
 
 ---
 
 ## 7. Relaciones y decisiones de modelado: embeber vs referenciar
 
-El diseño de Sentinel prioriza la lectura rápida y completa del ticket, justificando las siguientes decisiones arquitectónicas:
+El diseño de Sentinel prioriza la lectura rápida y completa del ticket, justificando las siguientes decisiones:
 
-*   **Embebido (Documentos Anidados y Arreglos):** Se anidan los `comentarios`, el `historial` de estados, los metadatos de `adjuntos` y los límites de `sla` dentro de la colección `tickets`. Esta decisión se fundamenta en que un ticket es un "agregado" lógico: la interfaz requiere todo su contexto histórico en una sola vista, resolviéndose con un único `findOne` a disco sin unir tablas adicionales. Adicionalmente, en `clientes`, se embeben los `equipos` asignados dado que son pocos y se leen conjuntamente al buscar al solicitante.
-*   **Referenciado Estándar:** Se utiliza una referencia por código natural (`_id: "HW_FALLA"`) desde `tickets` hacia `categorias`. Esto permite que la definición del servicio y los SLA evolucionen independientemente sin tener que reescribir masivamente los tickets históricos.
+*   **Embebido (documentos anidados y arreglos):** Se anidan los `comentarios`, el `historial` de estados, los metadatos de `adjuntos` y los límites de `sla` dentro de la colección `tickets`. Un ticket es un "agregado" lógico: la interfaz requiere todo su contexto histórico en una sola vista, que se resuelve con un único `findOne` sin unir colecciones. Los arreglos están acotados en la práctica (un ticket acumula decenas de comentarios, no miles), por lo que no hay riesgo de acercarse al límite de 16 MB por documento. En `clientes` se embeben los `equipos` porque son pocos (1 a 5) y se leen junto con el solicitante.
+*   **Referenciado:** Se utiliza una referencia por código natural (`categoria.codigo` → `categorias._id`, por ejemplo `"HW_FALLA"`) desde `tickets`. Esto permite que la definición del servicio y los SLA evolucionen sin reescribir los tickets históricos (cada ticket conserva sus límites SLA ya calculados). También se referencian `solicitante.cliente_id` y `agente.agente_id`, porque clientes y agentes tienen vida propia y cambian de forma independiente de los tickets.
 
 ## 8. Patrones de diseño documental aplicados
 
 Para mitigar las limitaciones de las referencias y optimizar el rendimiento, se implementan:
-*   **Patrón de Referencia Extendida (Extended Reference):** Al relacionar un ticket con su `agente` y `solicitante`, no solo se guarda el `ObjectId`, sino que se embebe una copia de los datos de lectura frecuente (nombre, email). Esto elimina los `$lookup` al listar bandejas de entrada.
-*   **Patrón de Valor Calculado (Computed Pattern):** La `carga_actual` en agentes y las `metricas` (cantidad de comentarios) en tickets se actualizan en el momento de la escritura para evitar realizar un `$count` sobre miles de documentos en cada lectura del tablero.
-*   **Patrón de Atributos Polimórficos:** El subdocumento `campos_personalizados` permite que la estructura varíe dinámicamente.
-*   **Versionado de Esquema (Schema Versioning):** El campo `schema_version` prepara a la base para convivir con alteraciones estructurales futuras sin inhabilitar el código existente.
+*   **Referencia extendida (Extended Reference):** Al relacionar un ticket con su `agente` y `solicitante`, no solo se guarda el `ObjectId`, sino también una copia de los datos de lectura frecuente (nombre, email, sede). Esto elimina los `$lookup` al listar bandejas de entrada. El costo es que un cambio de nombre no se propaga solo; se acepta porque son datos que casi no cambian.
+*   **Valor calculado (Computed):** La `carga_actual` en agentes y las `metricas` (cantidad de comentarios) en tickets se actualizan en el momento de la escritura para evitar un `$count` sobre miles de documentos en cada lectura del tablero.
+*   **Atributos polimórficos:** El subdocumento `campos_personalizados` permite que la estructura varíe según la categoría.
+*   **Versionado de esquema (Schema Versioning):** El campo `schema_version` prepara a la base para convivir con cambios estructurales futuros sin inhabilitar el código existente.
 
 ## 9. Patrones de acceso: consultas e índices previstos
 
-El sistema responderá a las necesidades operativas de la mesa de ayuda mediante consultas optimizadas:
-*   **Bandeja del agente:** Filtro por `agente.agente_id` y `estado` ("en_progreso"), ordenado por `sla.resolucion_limite` ascendente. Requerirá un **índice compuesto** para evitar un escaneo completo de la colección.
-*   **Búsqueda dinámica:** Dado que los `campos_personalizados` varían, se prevé la creación de un **índice Wildcard** (`campos_personalizados.$**`) para permitir búsquedas eficientes por valores específicos (ej. una "VLAN") sin conocer la ruta exacta.
+El sistema responderá a las necesidades operativas de la mesa de ayuda mediante consultas respaldadas por índices:
+
+| Patrón de acceso | Índice previsto | Justificación |
+| --- | --- | --- |
+| Bandeja del agente: filtro por `agente.agente_id` y `estado`, ordenado por `sla.resolucion_limite` ascendente | Compuesto `{ "agente.agente_id": 1, estado: 1, "sla.resolucion_limite": 1 }` | Igualdad, igualdad, orden: la consulta se resuelve recorriendo el índice sin ordenar en memoria. |
+| Búsqueda por número de ticket | Único `{ numero: 1 }` | Lookup puntual (RF-02) y garantía de que no se repite la numeración. |
+| Búsqueda dinámica por valores de campos personalizados (ej. una VLAN) | Wildcard `{ "campos_personalizados.$**": 1 }` | Las rutas varían por categoría; no se pueden indexar una a una. |
+| Reportes por categoría y período | Compuesto `{ "categoria.codigo": 1, creado: 1 }` | Soporta los cálculos de SLA y TMR por categoría. |
+
+Cada índice tiene un costo de almacenamiento y de mantenimiento en cada escritura; por eso se limita a los patrones de acceso reales. En la entrega 2 se medirá su uso con `explain("executionStats")`.
 
 ## 10. Consistencia y transacciones
 
-El mantenimiento de la integridad referencial se divide en dos enfoques:
-*   **Operaciones Atómicas en un Documento:** La numeración correlativa (`INC-2026-000142`) usa `findOneAndUpdate` con `$inc` sobre `contadores`. Agregar un comentario usa `$push` (para el texto) e `$inc` (para `cant_comentarios`) de forma simultánea.
-*   **Transacción Multidocumento:** Esencial para la *Asignación de Tickets*. Si un supervisor asigna un incidente, el sistema actualiza el `agente_id` en el ticket e incrementa la `carga_actual` en el agente simultáneamente. Una falla a la mitad corrompería la capacidad operativa. Se utilizará una sesión transaccional (requiriendo un Replica Set).
+El mantenimiento de la consistencia se divide en dos enfoques:
+*   **Operaciones atómicas en un documento:** La numeración correlativa (`INC-2026-000142`) usa `findOneAndUpdate` con `$inc` sobre `contadores`, que es atómico y no entrega el mismo número a dos solicitudes concurrentes. Agregar un comentario combina `$push` (el texto), `$inc` (`metricas.cant_comentarios`) y `$set` (`actualizado`) en una sola operación sobre el ticket.
+*   **Transacción multidocumento:** Esencial para la *asignación de tickets*. Si un supervisor asigna un incidente, el sistema actualiza `agente` en el ticket e incrementa la `carga_actual` del agente. Si solo se completara la primera mitad, el ticket figuraría asignado a un agente cuya carga no lo refleja, y el agente podría recibir más tickets que su capacidad máxima; si solo se completara la segunda, el agente quedaría con carga fantasma. La transacción garantiza que ambas cosas ocurran o ninguna.
+    *   **Control de capacidad:** el incremento se hace con una condición sobre el propio documento del agente (`$expr: { $lt: ["$carga_actual", "$capacidad_maxima"] }`) dentro de la transacción. Si la condición no se cumple, no se modifica nada y se aborta, lo que evita que dos asignaciones simultáneas superen la capacidad.
+    *   **Entorno:** requiere un replica set. En Docker Compose se configurará un replica set de un único nodo (`rs0`).
 
 ## 11. Análisis de datos previsto
 
@@ -218,5 +249,5 @@ Se calcularán métricas clave como:
 1.  Cumplimiento de SLA por categoría.
 2.  Tiempo medio de resolución (TMR).
 3.  Carga de trabajo real vs. capacidad máxima de agentes.
-El objetivo del análisis será derivar en decisiones accionables, como la redistribución de personal hacia el área más afectada.
 
+El objetivo del análisis será derivar en decisiones accionables, como la redistribución de personal hacia el área más afectada.
