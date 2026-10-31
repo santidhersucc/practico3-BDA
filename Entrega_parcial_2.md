@@ -38,7 +38,11 @@ Según el plan de trabajo (Semana 2): colecciones creadas y pobladas, scripts re
 
 ### Evidencia de ejecución (`generar_datos.py` y `cargar_datos.py`)
 
+<<<<<<< HEAD
 ```text
+=======
+**Evidencia de ejecución:** 
+>>>>>>> main
 (.venv) PS C:\Users\santi\TP_BDA\practico3-BDA> python scripts/generar_datos.py
 Escribiendo en C:\Users\santi\TP_BDA\practico3-BDA\data
   categorias     5 documentos
@@ -46,6 +50,28 @@ Escribiendo en C:\Users\santi\TP_BDA\practico3-BDA\data
   clientes      60 documentos
   tickets      280 documentos
   contadores     1 documentos
+<<<<<<< HEAD
+=======
+(.venv) PS C:\Users\santi\TP_BDA\practico3-BDA> python scripts/cargar_datos.py
+Base 'sentinel' en mongodb://localhost:27017/?directConnection=true
+  categorias     5 documentos cargados
+  agentes       10 documentos cargados
+  clientes      60 documentos cargados
+  tickets      280 documentos cargados
+  contadores     1 documentos cargados
+
+Verificación:
+  OK    conteo de categorias coincide con el archivo
+  OK    conteo de agentes coincide con el archivo
+  OK    conteo de clientes coincide con el archivo
+  OK    conteo de tickets coincide con el archivo
+  OK    conteo de contadores coincide con el archivo
+  OK    contador de numeración == último número de ticket
+  OK    todo ticket con agente referencia un agente existente
+  OK    carga_actual de cada agente == tickets abiertos que tiene
+
+Carga correcta.
+>>>>>>> main
 
 (.venv) PS C:\Users\santi\TP_BDA\practico3-BDA> python scripts/cargar_datos.py
 Base 'sentinel' en mongodb://localhost:27017/?directConnection=true
@@ -89,9 +115,83 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
 | **Q11** | Complejidad elegida (`$lookup` + `$unwind`) | ¿Cómo valoran la atención los solicitantes en las encuestas, por agente y sede? | Paula Giménez (2.39) ... Diego Paz (4.44) |
 | **Q12** | Búsqueda dinámica (índice wildcard) | ¿Qué tickets de red afectan específicamente a la VLAN 100? | 11 tickets (muestra 5) |
 
+<<<<<<< HEAD
 ### Evidencia de ejecución (`consultas/consultas.js`)
 
 ```javascript
+=======
+**Evidencia de ejecución:** 
+Ejecucion archivo indices.js:
+Índices de tickets:
+  _id_  {"_id":1}
+  idx_bandeja_agente  {"agente.agente_id":1,"estado":1,"sla.resolucion_limite":1}
+  uq_ticket_numero  {"numero":1}
+  idx_wildcard_campos  {"campos_personalizados.$**":1}
+  idx_categoria_creado  {"categoria.codigo":1,"creado":1}
+
+Tamaño de la colección tickets: 445179 bytes
+  índice _id_: 20480 bytes
+  índice idx_bandeja_agente: 20480 bytes
+  índice uq_ticket_numero: 20480 bytes
+  índice idx_wildcard_campos: 24576 bytes
+  índice idx_categoria_creado: 20480 bytes
+
+  Ejecucion archivo explain.js:
+  
+=== 1) Bandeja del agente (índice compuesto idx_bandeja_agente) ===
+  SIN índice (fuerza COLLSCAN):
+     etapas=SORT > COLLSCAN | keysExamined=0 | docsExamined=280 | nReturned=2 | ms=10
+  CON índice:
+     etapas=FETCH > IXSCAN | keysExamined=2 | docsExamined=2 | nReturned=2 | ms=13
+
+=== 2) Búsqueda por número (índice único uq_ticket_numero) ===
+  SIN índice:
+     etapas=COLLSCAN | keysExamined=0 | docsExamined=280 | nReturned=1 | ms=0
+  CON índice:
+     etapas=FETCH > IXSCAN | keysExamined=1 | docsExamined=1 | nReturned=1 | ms=1
+
+=== 3) Campo dinámico (índice wildcard idx_wildcard_campos) ===
+  SIN índice:
+     etapas=COLLSCAN | keysExamined=0 | docsExamined=280 | nReturned=11 | ms=2
+  CON índice:
+     etapas=FETCH > IXSCAN | keysExamined=11 | docsExamined=11 | nReturned=11 | ms=3
+
+=== 4) Reporte por categoría y período (idx_categoria_creado) ===
+  SIN índice:
+     etapas=COLLSCAN | keysExamined=0 | docsExamined=280 | nReturned=25 | ms=2
+  CON índice:
+     etapas=FETCH > IXSCAN | keysExamined=25 | docsExamined=25 | nReturned=25 | ms=2
+
+Nota: con ~280 documentos la diferencia de milisegundos es mínima; lo relevante es la cantidad de
+documentos examinados (docsExamined) y la etapa del plan. Cada índice cuesta espacio y se actualiza
+en cada escritura; por eso solo se crean los que respaldan los patrones de acceso reales.
+
+ejecucion consistencia.js:
+
+A) Asignación correcta con transacción
+   FALLA la operación devuelve ok
+   FALLA el ticket quedó 'asignado' a Lucía
+   FALLA la carga de Lucía subió exactamente 1
+   FALLA el historial registró la transición
+
+B) Falla entre las dos escrituras: la transacción debe deshacer todo
+   OK    la operación devuelve error (Transaction numbers are only allowed on a replica set member or mongos)
+   OK    el ticket sigue en 'nuevo' y sin agente (rollback)
+   OK    la carga de Lucía no cambió
+
+C) Agente al tope de su capacidad: la asignación debe rechazarse sin dejar rastros
+   FALLA la operación se rechaza (Transaction numbers are only allowed on a replica set member or mongos)
+   OK    el ticket sigue en 'nuevo' y sin agente
+   OK    la carga de Javier no superó su capacidad
+
+D) La misma falla SIN transacción deja la base inconsistente (demostración del problema)
+   OK    ticket 'asignado' a Lucía pero su carga NO subió -> inconsistencia visible
+
+5 verificación(es) fallaron.
+Datos de prueba eliminados y carga de Lucía restaurada.
+
+ejecucion consultas.js
+>>>>>>> main
 ==== Q1 · Comparación: tickets abiertos con el SLA de resolución ya vencido ====
 [
   {
@@ -239,7 +339,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     sla: { resolucion_limite: 2026-10-26T19:03:00.000Z }
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q2 · Comparación: tickets reabiertos o con muchos comentarios ====
 [
   {
@@ -293,7 +396,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     metricas: { cant_comentarios: 4, reaperturas: 0 }
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q3 · Operadores lógicos: urgentes y en riesgo ====
 [
   {
@@ -369,10 +475,15 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     sla: { incumplido: true }
   }
 ]
+<<<<<<< HEAD
 
 ==== Q4 · Atributos anidados: notebooks con falla de hardware en Sede Norte ====
 5
 
+=======
+==== Q4 · Atributos anidados: notebooks con falla de hardware en Sede Norte ====
+5
+>>>>>>> main
 ==== Q5 · Arreglos: tickets etiquetados a la vez como 'urgente' y 'recurrente' ====
 [
   {
@@ -441,7 +552,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     etiquetas: [ 'clase_en_curso', 'urgente', 'recurrente' ]
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q6 · Proyección, orden y límite: próximos 10 vencimientos de SLA ====
 [
   {
@@ -515,7 +629,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     sla: { resolucion_limite: 2026-10-13T10:37:00.000Z }
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q7 · Aggregate: cumplimiento de SLA por categoría ====
 [
   {
@@ -544,7 +661,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
   },
   { _id: 'COMPRAS', total: 33, incumplidos: 5, pct_incumplimiento: 15.2 }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q8 · Aggregate: tiempo de resolución por categoría (horas) ====
 [
   {
@@ -588,7 +708,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     desvio: 8.4
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q9 · Agrupamiento con estadística: tickets creados por día de la semana ====
 [
   { _id: 1, tickets: 101, pct_del_total: 36.1 },
@@ -599,7 +722,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
   { _id: 6, tickets: 6, pct_del_total: 2.1 },
   { _id: 7, tickets: 2, pct_del_total: 0.7 }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q10 · Aggregate: carga de trabajo vs. capacidad de cada agente ====
 [
   {
@@ -657,7 +783,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     ocupacion_pct: 12
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q11 · Compleja ($lookup + $unwind): satisfacción por agente y por habilidad ====
 [
   {
@@ -724,7 +853,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     puntaje_prom: 4.44
   }
 ]
+<<<<<<< HEAD
 
+=======
+>>>>>>> main
 ==== Q12 · Búsqueda dinámica (usa el índice wildcard): fallas de red en la VLAN 100 ====
 [
   {
@@ -753,9 +885,12 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     campos_personalizados: { equipos_afectados: 1, tipo_falla: 'intermitente' }
   }
 ]
+<<<<<<< HEAD
 ```
 
 ---
+=======
+>>>>>>> main
 
 ## 4. Índices y análisis de rendimiento
 
