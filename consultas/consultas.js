@@ -126,7 +126,7 @@ printjson(db.agentes.aggregate([
 ]).toArray());
 
 // ---------------------------------------------------------------------------
-titulo("Q11 · Compleja ($lookup + $unwind): satisfacción por agente y por habilidad");
+titulo("Q11 · Compleja ($lookup + $unwind): satisfacción por agente (con su nivel y sede)");
 // Objetivo: cruzar tickets cerrados con la encuesta y los datos del agente (colección distinta).
 // Muestra el costo de referenciar: acá sí hace falta un $lookup porque pedimos 'sede_base' y 'nivel'.
 // Esperado: Los más bajos: Paula Giménez 2.39 (31 encuestas) y Javier Rossi 2.93 (14); el resto entre 3.89 y 4.44.
