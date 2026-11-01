@@ -89,6 +89,10 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
 | **Q11** | Complejidad elegida (`$lookup` + `$unwind`) | ¿Cómo valoran la atención los solicitantes en las encuestas, por agente y sede? | Paula Giménez (2.39) ... Diego Paz (4.44) |
 | **Q12** | Búsqueda dinámica (índice wildcard) | ¿Qué tickets de red afectan específicamente a la VLAN 100? | 11 tickets (muestra 5) |
 
+**Nota sobre Q3.** La condición `$or` tiene dos ramas: SLA incumplido **o** sin agente (`agente: { $exists: false }`). Con los datos actuales, los 12 resultados salen por la primera rama: el generador no produjo tickets críticos o altos en estado `nuevo` (los tickets recientes se asignan en los primeros minutos y "hoy" en los datos es un momento fijo), y los tickets abiertos siempre tienen agente. La rama `$exists` es correcta y se mantiene porque representa un caso real del dominio (un ticket urgente que nadie tomó todavía). A partir de la entrega 3 la API permite crear tickets en estado `nuevo` (`POST /tickets`); un ticket crítico o alto creado así aparece en Q3 por esa rama hasta que se asigna.
+
+**Nota sobre Q10.** La salida de Q10 se volvió a capturar después de corregir la limpieza de `consistencia.js` (ver `Entrega_parcial_3.md`, sección 10): la versión anterior mostraba a Lucía Ferreyra con 3/10 (30 %) por una resta de más; el valor correcto es 4/10 (40 %).
+
 ### Evidencia de ejecución (`consultas/consultas.js`)
 
 ```javascript
@@ -627,6 +631,12 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     ocupacion_pct: 50
   },
   {
+    nombre: 'Lucía Ferreyra',
+    capacidad_maxima: 10,
+    carga_actual: 4,
+    ocupacion_pct: 40
+  },
+  {
     nombre: 'Carla Benítez',
     capacidad_maxima: 10,
     carga_actual: 4,
@@ -637,12 +647,6 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
     capacidad_maxima: 5,
     carga_actual: 2,
     ocupacion_pct: 40
-  },
-  {
-    nombre: 'Lucía Ferreyra',
-    capacidad_maxima: 10,
-    carga_actual: 3,
-    ocupacion_pct: 30
   },
   {
     nombre: 'Nicolás Aguirre',
@@ -658,7 +662,7 @@ Archivo: `consultas/consultas.js`. Se implementaron 12 consultas que cubren y su
   }
 ]
 
-==== Q11 · Compleja ($lookup + $unwind): satisfacción por agente y por habilidad ====
+==== Q11 · Compleja ($lookup + $unwind): satisfacción por agente (con su nivel y sede) ====
 [
   {
     encuestas: 31,

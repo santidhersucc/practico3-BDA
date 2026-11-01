@@ -71,6 +71,7 @@ const estado = n => db.tickets.findOne({ numero: n });
 
 // ---------- Escenario A: éxito
 print("\nA) Asignación correcta con transacción");
+const cargaOriginalLucia = lucia().carga_actual;
 let c0 = lucia().carga_actual;
 let r = asignarConTransaccion(N[0], "Lucía Ferreyra", false);
 verificar("la operación devuelve ok", r.ok);
@@ -105,6 +106,6 @@ verificar("ticket 'asignado' a Lucía pero su carga NO subió -> inconsistencia 
 
 // ---------- limpieza: dejar los datos como estaban
 db.tickets.deleteMany({ numero: /^INC-9999-/ });
-db.agentes.updateOne({ nombre: "Lucía Ferreyra" }, { $inc: { carga_actual: -1 } });          // deshace la asignación del escenario A
+db.agentes.updateOne({ nombre: "Lucía Ferreyra" }, { $set: { carga_actual: cargaOriginalLucia } });          // restaura la carga previa al escenario A
 print("\n" + (fallos === 0 ? "Todas las verificaciones pasaron." : fallos + " verificación(es) fallaron."));
 print("Datos de prueba eliminados y carga de Lucía restaurada.");

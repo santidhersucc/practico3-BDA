@@ -1,0 +1,19 @@
+# Python: archivos compilados que se regeneran solos en cada máquina
+__pycache__/
+*.pyc
+
+# pytest
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Configuración local con datos propios (se sube solo .env.example)
+.env
+
+# Jupyter (semana 4)
+.ipynb_checkpoints/
+
+# Configuración local de Claude Code
+.claude/
