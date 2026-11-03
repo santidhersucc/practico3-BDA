@@ -1,0 +1,5 @@
+# Módulo de análisis (punto 5.7). Instalar con:  pip install -r analisis/requirements.txt
+pymongo>=4.6
+pandas>=2.0
+matplotlib>=3.7
+jupyterlab>=4.0

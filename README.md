@@ -10,7 +10,7 @@ repositorios, caso de consistencia con transacciones y tests automatizados.
 | 1 · Diseño | Requerimientos, modelo documental, justificación → `Entrega_parcial_1.md` | ✔ |
 | 2 · Base y consultas | Carga reproducible, 12 consultas, índices, explain, prueba de consistencia en mongosh → `Entrega_parcial_2.md` | ✔ |
 | 3 · API y consistencia | API FastAPI con CRUD, repositorios, validaciones, manejo de errores, transacciones y 53 tests (secciones 8 a 10) → `Entrega_parcial_3.md` | ✔ |
-| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis, informe final y defensa: pendiente | en curso |
+| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis ✔ (`analisis/`) · prueba desde entorno limpio, informe final y defensa: pendiente | en curso |
 
 ## Qué hay en esta carpeta
 
@@ -49,6 +49,9 @@ api/                          API REST (FastAPI + PyMongo)
     conftest.py               crea, limpia y borra la base de prueba sentinel_test
     test_crud.py              38 tests de endpoints, validaciones y errores
     test_consistencia.py      15 tests del caso de consistencia y concurrencia
+analisis/                     módulo de análisis de datos (sección 11)
+  analisis_sentinel.ipynb     notebook: conexión a MongoDB, 3 indicadores, 3 gráficos, interpretación y conclusión
+  requirements.txt            pymongo, pandas, matplotlib y jupyterlab
 docs/capturas/                capturas de Swagger usadas en Entrega_parcial_3.md
 .gitignore                    archivos que no se suben: __pycache__, .pytest_cache, .env, entornos virtuales, .claude/
 ```
@@ -395,11 +398,35 @@ Un módulo por colección. Dos ideas que se repiten:
 
 ---
 
+## 11. Análisis de datos
+
+El notebook `analisis/analisis_sentinel.ipynb` lee los datos desde MongoDB (base `sentinel`), así que necesita el entorno
+levantado y los datos cargados (secciones 3 y 5). Se ejecuta desde tu PC, no dentro de un contenedor:
+
+```bash
+pip install -r analisis/requirements.txt
+jupyter lab analisis/analisis_sentinel.ipynb      # ejecutar con Run > Run All Cells
+```
+
+Se conecta a `mongodb://localhost:27017/?directConnection=true`; si cambiaste `MONGO_PORT`, definí `MONGO_URI` antes de abrirlo.
+Contiene tres indicadores, cada uno con su gráfico y su interpretación, y una conclusión con recomendación:
+
+| Indicador | Gráfico |
+|---|---|
+| Incumplimiento del SLA por categoría | Barras |
+| Tiempo de resolución por categoría | Diagrama de cajas |
+| Trabajo atendido por unidad de capacidad de cada agente | Barras horizontales |
+
+> **Windows**: si `pip` o `jupyter` no se reconocen, usá `py -m pip install ...` y `py -m jupyter lab ...`.
+
+---
+
 ## Qué guardar como evidencia
 
 - **Entrega 2**: la salida de consola de las secciones 5 y 6; se pega en `Entrega_parcial_2.md`. Los resultados de
   `explain.js` en particular **no están escritos de antemano**: son los que salgan en tu máquina.
 - **Entrega 3**: la salida de `docker compose exec api python -m pytest api/tests -v` (sección 9) y las capturas de
   Swagger (sección 8, guardadas en `docs/capturas/`) ya están en `Entrega_parcial_3.md`.
+- **Entrega 4 (análisis)**: abrir el notebook, ejecutar *Run All Cells* y guardarlo con las salidas y gráficos incluidos.
 - **Entrega 4 (Docker Compose)**: la salida de `docker compose ps` con los dos servicios, y la de la carga de datos y de
   los tests ejecutados dentro de los contenedores, partiendo de `docker compose down -v`.
