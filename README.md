@@ -10,13 +10,17 @@ repositorios, caso de consistencia con transacciones y tests automatizados.
 | 1 · Diseño | Requerimientos, modelo documental, justificación → `Entrega_parcial_1.md` | ✔ |
 | 2 · Base y consultas | Carga reproducible, 12 consultas, índices, explain, prueba de consistencia en mongosh → `Entrega_parcial_2.md` | ✔ |
 | 3 · API y consistencia | API FastAPI con CRUD, repositorios, validaciones, manejo de errores, transacciones y 53 tests (secciones 8 a 10) → `Entrega_parcial_3.md` | ✔ |
-| 4 · Integración | Docker Compose, notebook de análisis, documentación final y defensa | pendiente |
+| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis, informe final y defensa: pendiente | en curso |
 
 ## Qué hay en esta carpeta
 
 ```
+docker-compose.yml            servicios mongo (replica set + volumen) y api
+Dockerfile                    imagen de la API (también ejecuta los scripts de carga y los tests)
+.env.example                  variables de configuración de ejemplo (sin credenciales)
+.dockerignore                 archivos que no entran a la imagen
 data/                         5 archivos NDJSON ya generados (categorias, agentes, clientes, tickets, contadores)
-requirements.txt              pymongo (solo para cargar_datos.py)
+requirements.txt              pymongo (solo si cargás los datos desde tu PC, sin contenedor)
 scripts/generar_datos.py      regenera data/ (opcional: los datos ya vienen incluidos)
 scripts/verificar_datos.py    chequea los archivos de data/ sin necesitar MongoDB
 scripts/cargar_datos.py       crea las colecciones (con validadores), carga los datos y verifica la carga
@@ -49,20 +53,18 @@ docs/capturas/                capturas de Swagger usadas en Entrega_parcial_3.md
 .gitignore                    archivos que no se suben: __pycache__, .pytest_cache, .env, entornos virtuales, .claude/
 ```
 
-## Resumen rápido (si ya tenés Docker y Python)
+## Resumen rápido (si ya tenés Docker)
 
 ```bash
-docker run -d --name sentinel-mongo -p 27017:27017 mongo:7 --replSet rs0
-docker exec sentinel-mongo mongosh --quiet --eval "rs.initiate({_id:'rs0', members:[{_id:0, host:'localhost:27017'}]})"
-pip install -r requirements.txt -r api/requirements.txt
-python scripts/cargar_datos.py
-docker exec -i sentinel-mongo mongosh sentinel < consultas/indices.js
-python -m uvicorn app.main:app --app-dir api --reload      # API en http://localhost:8000/docs
-python -m pytest api/tests -v                              # tests (no tocan la base sentinel)
+docker compose up -d --build                                                      # MongoDB (replica set) + API
+docker compose exec api python scripts/cargar_datos.py                            # datos de prueba
+docker compose exec mongo mongosh sentinel --quiet --file /consultas/indices.js   # índices
+docker compose exec api python -m pytest api/tests -v                             # 53 tests (no tocan la base sentinel)
+# Swagger: http://localhost:8000/docs        Detener: docker compose down
 ```
 
-El detalle de cada paso está abajo. **En Windows**: si `python` no funciona, usá `py -3` (ver paso 4), y en PowerShell
-el `<` no funciona: usá `Get-Content consultas/indices.js | docker exec -i sentinel-mongo mongosh sentinel` (ver paso 5).
+No hace falta Python en tu PC: la carga de datos, la API y los tests corren dentro de los contenedores. El detalle de
+cada paso está abajo.
 
 ---
 
@@ -70,12 +72,15 @@ el `<` no funciona: usá `Get-Content consultas/indices.js | docker exec -i sent
 
 | Herramienta | Para qué | ¿Obligatoria? |
 |---|---|---|
-| **Docker Desktop** | Corre el servidor de MongoDB en un contenedor (ya trae `mongosh` adentro y Docker Compose) | Sí (recomendado) |
-| **Python 3.10+** | Cargar los datos, correr la API y los tests | Sí |
+| **Docker Desktop** | Corre MongoDB y la API en contenedores (ya trae Docker Compose) | Sí |
+| **Git** | Clonar el repositorio (o descargar el zip desde GitHub) | Sí |
 | **MongoDB Compass** | Ver los datos con interfaz gráfica | No |
-| **mongosh** en tu PC | Correr los `.js` directamente | No (se puede usar el del contenedor) |
+| **Python 3.10+** y **mongosh** en tu PC | Solo para ejecutar scripts, API o tests fuera de los contenedores (sección 4) | No |
 
-> **MongoDB Compass no es el servidor**: es solo un cliente para mirar la base. Sin un servidor corriendo (el contenedor)
+> **Puerto 27017:** si ya tenés otro MongoDB usándolo (por ejemplo, instalado como servicio de Windows), detenelo
+> (`Stop-Service MongoDB` en PowerShell como administrador) o cambiá `MONGO_PORT` en `.env` (sección 3).
+>
+> **MongoDB Compass no es el servidor**: es solo un cliente para mirar la base. Sin el contenedor `mongo` corriendo,
 > Compass no tiene a qué conectarse.
 
 ### ¿Por qué replica set?
@@ -83,6 +88,7 @@ el `<` no funciona: usá `Get-Content consultas/indices.js | docker exec -i sent
 Las **transacciones multidocumento** (asignar un ticket y subir la carga del agente a la vez, o resolver/cancelar y
 bajarla) solo funcionan en un replica set; una instancia *standalone* no las soporta. Usamos un replica set de **un solo
 miembro**: no aporta copias, pero habilita las transacciones. Lo necesitan `consistencia.js`, la API y los tests.
+Docker Compose lo inicializa solo (sección 3): no hay que ejecutar `rs.initiate` a mano.
 
 ## 2. Instalar Docker Desktop (una sola vez)
 
@@ -102,46 +108,59 @@ correr el instalador. Otra opción es ejecutar el instalador como administrador 
 Si después Docker dice que la virtualización está deshabilitada, hay que activarla en la BIOS (se puede ver en
 Administrador de tareas → Rendimiento → CPU → *Virtualización*).
 
-## 3. Crear el contenedor de MongoDB (una sola vez)
+## 3. Iniciar y detener el entorno (Docker Compose)
+
+Desde la raíz del repo (donde está `docker-compose.yml`):
 
 ```bash
-docker run -d --name sentinel-mongo -p 27017:27017 mongo:7 --replSet rs0
+docker compose up -d --build
+docker compose ps
 ```
 
-- La primera vez descarga la imagen `mongo:7` (~250 MB). Después arranca en segundos.
-- `-p 27017:27017` expone MongoDB en `localhost:27017` de tu PC.
-- `--replSet rs0` lo arranca como parte del replica set `rs0`.
+- `up -d --build` construye la imagen de la API (la primera vez tarda) y levanta los servicios en segundo plano.
+- `ps` tiene que mostrar `sentinel-mongo` **(healthy)** y `sentinel-api` en ejecución. MongoDB tarda unos 15 segundos en
+  quedar *healthy* porque se inicializa el replica set; la API espera a que lo esté.
 
-Activar el replica set (una sola vez):
+| Servicio | Contenedor | Qué es | Puerto en tu PC |
+|---|---|---|---|
+| `mongo` | `sentinel-mongo` | MongoDB 7 como replica set `rs0` de un miembro. Los datos viven en el volumen `sentinel_mongo_data` | `127.0.0.1:27017` |
+| `api` | `sentinel-api` | API FastAPI. Dentro de Compose se conecta con `mongodb://mongo:27017/?replicaSet=rs0` (nombre del servicio, no `localhost`) | `127.0.0.1:8000` |
 
-```bash
-docker exec sentinel-mongo mongosh --quiet --eval "rs.initiate({_id:'rs0', members:[{_id:0, host:'localhost:27017'}]})"
-```
+El replica set lo inicializa el *healthcheck* del servicio `mongo` la primera vez y declara su miembro como `mongo:27017`.
+Dentro de Compose la API usa ese nombre; desde tu PC (Compass, scripts o `mongosh` fuera del contenedor) hay que conectarse con
+`directConnection=true` (sección 7).
 
-Tiene que responder `{ ok: 1 }`. Se declara el miembro como `localhost:27017` porque si no, MongoDB se anuncia con el
-nombre interno del contenedor (algo como `24eb1b8cbb1c:27017`), que no existe fuera de Docker.
+### Variables de configuración
 
-Verificar:
+`.env.example` lista las variables; todas tienen valor por defecto, así que copiarlo a `.env` es opcional
+(`cp .env.example .env`). **No contiene credenciales**: el MongoDB local no usa autenticación y `.env` está en `.gitignore`.
 
-```bash
-docker exec sentinel-mongo mongosh --quiet --eval "rs.status().members.map(m => m.name + ' ' + m.stateStr)"
-```
+| Variable | Default | Para qué |
+|---|---|---|
+| `MONGO_PORT` | `27017` | Puerto de tu PC donde se publica MongoDB |
+| `API_PORT` | `8000` | Puerto de tu PC donde se publica la API |
+| `MONGO_DB` | `sentinel` | Base que usa la API |
+| `ANIO_NUMERACION` | `2026` | Año de la numeración `INC-AAAA-NNNNNN` |
 
-Debe mostrar `localhost:27017 PRIMARY`.
-
-### Uso diario del contenedor
+### Uso diario
 
 | Situación | Comando |
 |---|---|
-| Después de reiniciar la PC (abrir Docker Desktop primero) | `docker start sentinel-mongo` |
-| Apagarlo | `docker stop sentinel-mongo` |
-| Ver si está corriendo | `docker ps` |
-| Borrarlo por completo (**se pierden los datos**) | `docker rm -f sentinel-mongo` |
+| Levantar el entorno (los datos se conservan) | `docker compose up -d` |
+| Detenerlo (los datos se conservan en el volumen) | `docker compose down` |
+| Ver el estado | `docker compose ps` |
+| Ver los logs | `docker compose logs -f api` (o `mongo`) |
+| Cambié el código de la API | `docker compose up -d --build` |
+| Borrar todo, **incluidos los datos** | `docker compose down -v` |
+| Empezar desde cero | `docker compose down -v`, `docker compose up -d --build` y volver a cargar datos e índices (sección 5) |
 
-`docker run` **crea** el contenedor (se usa una vez; si lo repetís falla porque el nombre ya existe).
-`docker start` lo vuelve a prender. `docker exec` ejecuta un programa **dentro** de un contenedor que ya está corriendo.
+Los datos persisten entre `down` y `up` gracias al volumen, así que alcanza con cargarlos una vez.
+`docker compose up` crea el contenedor si no existe y lo enciende si está apagado; no hace falta `docker run`.
 
-## 4. Preparar Python
+## 4. (Opcional) Ejecutar con Python en tu PC, sin contenedor `api`
+
+Solo si querés correr los scripts, la API o los tests directamente en tu máquina. Requiere Python 3.10+ y el contenedor
+`mongo` levantado (sección 3).
 
 ```bash
 pip install -r requirements.txt -r api/requirements.txt
@@ -150,37 +169,22 @@ pip install -r requirements.txt -r api/requirements.txt
 - `requirements.txt` (raíz): solo `pymongo`, para `cargar_datos.py`.
 - `api/requirements.txt`: `fastapi`, `uvicorn`, `pymongo`, `pydantic`, `pytest` y `httpx`, para la API y los tests.
 
-> **Windows**: si `python` abre la Microsoft Store o dice "no se encontró Python", es porque Python no está en el PATH y
-> el alias de la Store intercepta el comando. Usá el lanzador **`py -3`** en su lugar: `py -3 -m pip install ...`,
-> `py -3 scripts/cargar_datos.py`, `py -m uvicorn ...`, `py -m pytest ...`. El `-3` importa con los scripts: tienen la
-> línea `#!/usr/bin/env python3` y `py` sin versión la obedece e intenta abrir `python3`, que vuelve a caer en el alias de
-> la Store. Otra opción: reinstalar Python tildando *Add python.exe to PATH* y desactivar el alias en Configuración →
-> Aplicaciones → Configuración avanzada de aplicaciones → Alias de ejecución de aplicaciones. En Mac/Linux suele ser `python3`.
->
-> Si al instalar aparece *"The script ... is installed in '...\Scripts' which is not on PATH"*, `uvicorn` y `pytest` no
-> se encuentran como comando: correlos siempre con `py -m` adelante.
+Desde tu PC los comandos son los mismos que en el contenedor, sin el prefijo `docker compose exec api`:
+`python scripts/cargar_datos.py`, `python -m pytest api/tests -v`, y para la API con recarga automática primero
+`docker compose stop api` (para liberar el puerto 8000) y luego `python -m uvicorn app.main:app --app-dir api --reload`.
+
+> **Windows**: si `python` abre la Microsoft Store o dice "no se encontró Python", usá el lanzador **`py -3`**
+> (`py -3 -m pip install ...`, `py -3 scripts/cargar_datos.py`, `py -m uvicorn ...`, `py -m pytest ...`). Si pip avisa que
+> `...\Scripts` no está en el PATH, corré siempre `uvicorn` y `pytest` con `py -m` adelante.
 
 ## 5. Cargar los datos y crear los índices
 
 ```bash
 # Borra y recrea las colecciones de la base "sentinel" (con validadores), carga data/*.json y verifica
-python scripts/cargar_datos.py
-```
+docker compose exec api python scripts/cargar_datos.py
 
-Si MongoDB no está en `localhost:27017` (por ejemplo Atlas), antes definí `MONGO_URI`:
-`export MONGO_URI="mongodb://..."` (bash) o `$env:MONGO_URI="mongodb://..."` (PowerShell).
-
-Después, crear los índices. Hay tres formas equivalentes según lo que tengas:
-
-```bash
-# a) Con mongosh instalado en tu PC
-mongosh sentinel --file consultas/indices.js
-
-# b) Sin mongosh, usando el del contenedor — bash / Git Bash / Mac / Linux
-docker exec -i sentinel-mongo mongosh sentinel < consultas/indices.js
-
-# c) Sin mongosh, usando el del contenedor — Windows PowerShell
-Get-Content consultas/indices.js | docker exec -i sentinel-mongo mongosh sentinel
+# Crea los índices (con el mongosh del contenedor mongo, que ve la carpeta consultas/ en /consultas)
+docker compose exec mongo mongosh sentinel --quiet --file /consultas/indices.js
 ```
 
 > `cargar_datos.py` borra las colecciones **y sus índices**: cada vez que lo vuelvas a correr, repetí los índices.
@@ -188,29 +192,28 @@ Get-Content consultas/indices.js | docker exec -i sentinel-mongo mongosh sentine
 Verificar que quedó todo (cantidad de documentos e índices por colección):
 
 ```bash
-docker exec sentinel-mongo mongosh sentinel --quiet --eval "db.getCollectionNames().sort().forEach(c => print(c, db[c].countDocuments(), db[c].getIndexes().map(i => i.name).join(',')))"
+docker compose exec mongo mongosh sentinel --quiet --eval "db.getCollectionNames().sort().forEach(c => print(c, db[c].countDocuments(), db[c].getIndexes().map(i => i.name).join(',')))"
 ```
 
 Resultado esperado: `agentes 10`, `categorias 5`, `clientes 60`, `contadores 1`, `tickets 280`, con los índices
 `idx_bandeja_agente`, `uq_ticket_numero`, `idx_wildcard_campos`, `idx_categoria_creado`, `uq_agente_email` y `uq_cliente_email`.
 
+
 ## 6. Consultas, explain y consistencia (mongosh)
 
-Mismo patrón que los índices: con `mongosh` local, o con el del contenedor.
+El servicio `mongo` tiene la carpeta `consultas/` montada en `/consultas`, así que se ejecutan con el `mongosh` del contenedor:
 
-| Script | Con mongosh local | Sin mongosh (PowerShell) | Sin mongosh (bash) |
-|---|---|---|---|
-| Consultas | `mongosh sentinel --file consultas/consultas.js` | `Get-Content consultas/consultas.js \| docker exec -i sentinel-mongo mongosh sentinel` | `docker exec -i sentinel-mongo mongosh sentinel < consultas/consultas.js` |
-| Explain | `mongosh sentinel --file consultas/explain.js` | `Get-Content consultas/explain.js \| docker exec -i sentinel-mongo mongosh sentinel` | `docker exec -i sentinel-mongo mongosh sentinel < consultas/explain.js` |
-| Consistencia (requiere replica set) | `mongosh sentinel --file consultas/consistencia.js` | `Get-Content consultas/consistencia.js \| docker exec -i sentinel-mongo mongosh sentinel` | `docker exec -i sentinel-mongo mongosh sentinel < consultas/consistencia.js` |
+| Script | Comando |
+|---|---|
+| Consultas | `docker compose exec mongo mongosh sentinel --quiet --file /consultas/consultas.js` |
+| Explain | `docker compose exec mongo mongosh sentinel --quiet --file /consultas/explain.js` |
+| Consistencia (requiere replica set) | `docker compose exec mongo mongosh sentinel --quiet --file /consultas/consistencia.js` |
 
 - `consultas.js` y `explain.js` solo leen.
 - `consistencia.js` crea tickets de prueba (`INC-9999-*`), modifica la carga de un agente y al final deja los datos como estaban.
 
-Si usás Atlas o un servidor remoto con mongosh local, reemplazá `sentinel` por la cadena completa:
-`mongosh "mongodb+srv://.../sentinel" --file ...`
+Para repetir todo desde cero alcanza con volver a correr la sección 5 (datos + índices).
 
-Para repetir todo desde cero alcanza con volver a correr el paso 5 (datos + índices).
 
 ## 7. Conectarse con MongoDB Compass
 
@@ -224,23 +227,17 @@ Se ve la base `sentinel` con sus 5 colecciones (las bases `admin`, `config` y `l
 
 ---
 
-## 8. Levantar la API
+## 8. Usar la API
 
-Con el contenedor corriendo y los datos cargados (pasos 3 a 5), desde la raíz del repo:
-
-```bash
-py -m uvicorn app.main:app --app-dir api --reload
-```
-
-(o, parado dentro de `api/`: `py -m uvicorn app.main:app --reload`). Queda en `http://localhost:8000`:
+Con `docker compose up -d --build` la API ya está corriendo (servicio `api`) y, con los datos cargados (secciones 3 a 5),
+lista para usar:
 
 - **Swagger** (probar los endpoints desde el navegador): `http://localhost:8000/docs` → abrir un endpoint →
   *Try it out* → completar → *Execute*.
 - **Health check**: `http://localhost:8000/health` → `{"status": "ok", "base": "sentinel"}` (503 si MongoDB no responde).
-- `--reload` reinicia la API sola cada vez que se guarda un archivo. `Ctrl+C` la detiene.
 
-> Lo que hagas desde Swagger **modifica la base `sentinel`**. Para volver a los datos originales: paso 5
-> (`py -3 scripts/cargar_datos.py` + índices).
+> Lo que hagas desde Swagger **modifica la base `sentinel`**. Para volver a los datos originales: sección 5.
+
 
 ### Endpoints
 
@@ -274,24 +271,27 @@ Ejemplo de body para crear (categoría `SW_ACCESO`):
 
 Para asignar, un `agente_id` válido es `66f1a2b3c4d5e6f7a800a002` (Lucía Ferreyra).
 
-### Configuración (variables de entorno)
+### Configuración (variables de entorno de la API)
 
-| Variable | Default | Para qué |
+| Variable | Default (fuera de Compose) | Para qué |
 |---|---|---|
-| `MONGO_URI` | `mongodb://localhost:27017/?directConnection=true` | Dónde está MongoDB (la misma que usa `cargar_datos.py`) |
+| `MONGO_URI` | `mongodb://localhost:27017/?directConnection=true` | Dónde está MongoDB. En Compose se fija a `mongodb://mongo:27017/?replicaSet=rs0` |
 | `MONGO_DB` | `sentinel` | Base a usar (los tests usan `sentinel_test`) |
 | `ANIO_NUMERACION` | `2026` | Año de la numeración `INC-AAAA-NNNNNN` (contador `ticket-<año>`) |
 
+
 ## 9. Correr los tests
 
-Requisitos: el contenedor corriendo como replica set (paso 3) y las dependencias de `api/requirements.txt`.
-**No hace falta cargar datos ni levantar la API.** Desde la raíz del repo:
+Requisito: el entorno levantado (sección 3). **No hace falta cargar datos.**
 
 ```bash
-py -m pytest api/tests -v
+docker compose exec api python -m pytest api/tests -v
 ```
 
-Resultado esperado: `53 passed`. Para correr un solo archivo: `py -m pytest api/tests/test_consistencia.py -v`.
+Resultado esperado: `53 passed`. Para correr un solo archivo:
+`docker compose exec api python -m pytest api/tests/test_consistencia.py -v`.
+(Sin contenedor `api`: `python -m pytest api/tests -v`, sección 4.)
+
 
 **Los tests no tocan la base `sentinel`.** Usan una base descartable `sentinel_test` dentro del mismo contenedor:
 
@@ -329,7 +329,7 @@ Los servicios lanzan errores del dominio y `errors.py` los traduce. Formato de t
 | `Conflicto` | 409 | transición de estado no permitida, agente sin cupo, borrar un ticket abierto |
 | `Validacion` | 422 | campos personalizados que no cumplen la definición de la categoría |
 | clave duplicada (índice único) | 409 | número de ticket o email repetido |
-| MongoDB no responde | 503 | el contenedor está apagado (`docker start sentinel-mongo`) |
+| MongoDB no responde | 503 | el contenedor está apagado (`docker compose up -d`) |
 
 ### Validación en dos niveles
 
@@ -397,8 +397,9 @@ Un módulo por colección. Dos ideas que se repiten:
 
 ## Qué guardar como evidencia
 
-- **Entrega 2**: la salida de consola de los pasos 5 y 6; se pega en `Entrega_parcial_2.md`, que tiene los lugares
-  marcados con **COMPLETAR**. Los resultados de `explain.js` en particular **no están escritos de antemano**: son los que
-  salgan en tu máquina.
-- **Entrega 3**: la salida de `py -m pytest api/tests -v` (sección 9) y las capturas de Swagger (sección 8, guardadas en
-  `docs/capturas/`) ya están en `Entrega_parcial_3.md`.
+- **Entrega 2**: la salida de consola de las secciones 5 y 6; se pega en `Entrega_parcial_2.md`. Los resultados de
+  `explain.js` en particular **no están escritos de antemano**: son los que salgan en tu máquina.
+- **Entrega 3**: la salida de `docker compose exec api python -m pytest api/tests -v` (sección 9) y las capturas de
+  Swagger (sección 8, guardadas en `docs/capturas/`) ya están en `Entrega_parcial_3.md`.
+- **Entrega 4 (Docker Compose)**: la salida de `docker compose ps` con los dos servicios, y la de la carga de datos y de
+  los tests ejecutados dentro de los contenedores, partiendo de `docker compose down -v`.
