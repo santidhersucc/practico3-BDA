@@ -10,7 +10,7 @@ repositorios, caso de consistencia con transacciones y tests automatizados.
 | 1 · Diseño | Requerimientos, modelo documental, justificación → `Entrega_parcial_1.md` | ✔ |
 | 2 · Base y consultas | Carga reproducible, 12 consultas, índices, explain, prueba de consistencia en mongosh → `Entrega_parcial_2.md` | ✔ |
 | 3 · API y consistencia | API FastAPI con CRUD, repositorios, validaciones, manejo de errores, transacciones y 53 tests (secciones 8 a 10) → `Entrega_parcial_3.md` | ✔ |
-| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis ✔ (`analisis/`) · prueba desde entorno limpio, informe final y defensa: pendiente | en curso |
+| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis ✔ (`analisis/`) · prueba desde entorno limpio, informe final y defensa: pendiente | en curso | ✔ |
 
 ## Qué hay en esta carpeta
 
