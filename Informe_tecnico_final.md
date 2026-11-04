@@ -185,7 +185,7 @@ Se ejecutó `explain('executionStats')` forzando el recorrido completo con `hint
 | C. Agente en su capacidad máxima | Se rechaza sin dejar rastros: ticket sin cambios y carga sin superar el tope |
 | D. La misma falla sin transacción | Demostración del problema: el ticket queda asignado pero la carga no sube |
 
-**Concurrencia.** Diez asignaciones simultáneas por el último cupo de un agente: entra solo una. Cinco pedidos simultáneos para el mismo ticket: se asigna una sola vez. Cincuenta altas en paralelo recibieron cincuenta números distintos. Cada test verifica al final que `carga_actual` coincida con los tickets abiertos de cada agente.
+**Concurrencia.** Diez asignaciones simultáneas por el último cupo de un agente: entra solo una. Cinco pedidos simultáneos para el mismo ticket: se asigna una sola vez. Cada test verifica al final que `carga_actual` coincida con los tickets abiertos de cada agente.
 
 ## 8. API y repositorios
 

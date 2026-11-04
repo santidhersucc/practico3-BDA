@@ -10,7 +10,7 @@ repositorios, caso de consistencia con transacciones y tests automatizados.
 | 1 · Diseño | Requerimientos, modelo documental, justificación → `Entrega_parcial_1.md` | ✔ |
 | 2 · Base y consultas | Carga reproducible, 12 consultas, índices, explain, prueba de consistencia en mongosh → `Entrega_parcial_2.md` | ✔ |
 | 3 · API y consistencia | API FastAPI con CRUD, repositorios, validaciones, manejo de errores, transacciones y 53 tests (secciones 8 a 10) → `Entrega_parcial_3.md` | ✔ |
-| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis ✔ (`analisis/`) · prueba desde entorno limpio, informe final y defensa: pendiente | en curso | ✔ |
+| 4 · Integración | Docker Compose (MongoDB + API) ✔ · notebook de análisis ✔ (`analisis/`) · informe técnico final (`Informe_tecnico_final.md`) ✔ · defensa: pendiente | en curso |
 
 ## Qué hay en esta carpeta
 
@@ -383,8 +383,8 @@ desfasada (es lo que demuestra el test D).
 
 - **Comentar**: `$push` del comentario + `$inc` de `metricas.cant_comentarios` + `$set` de fechas en el mismo update
   sobre un solo documento.
-- **Numeración** `INC-AAAA-NNNNNN`: `find_one_and_update` + `$inc` sobre `contadores` (50 pedidos en paralelo recibieron
-  50 números distintos). Si no existe el contador del año, se crea (`upsert`) y arranca en 1.
+- **Numeración** `INC-AAAA-NNNNNN`: `find_one_and_update` + `$inc` sobre `contadores` (atómico: dos pedidos simultáneos nunca reciben el mismo
+  número). Si no existe el contador del año, se crea (`upsert`) y arranca en 1.
 
 ### Repositorios
 
