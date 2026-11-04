@@ -420,13 +420,3 @@ Contiene tres indicadores, cada uno con su gráfico y su interpretación, y una 
 > **Windows**: si `pip` o `jupyter` no se reconocen, usá `py -m pip install ...` y `py -m jupyter lab ...`.
 
 ---
-
-## Qué guardar como evidencia
-
-- **Entrega 2**: la salida de consola de las secciones 5 y 6; se pega en `Entrega_parcial_2.md`. Los resultados de
-  `explain.js` en particular **no están escritos de antemano**: son los que salgan en tu máquina.
-- **Entrega 3**: la salida de `docker compose exec api python -m pytest api/tests -v` (sección 9) y las capturas de
-  Swagger (sección 8, guardadas en `docs/capturas/`) ya están en `Entrega_parcial_3.md`.
-- **Entrega 4 (análisis)**: abrir el notebook, ejecutar *Run All Cells* y guardarlo con las salidas y gráficos incluidos.
-- **Entrega 4 (Docker Compose)**: la salida de `docker compose ps` con los dos servicios, y la de la carga de datos y de
-  los tests ejecutados dentro de los contenedores, partiendo de `docker compose down -v`.
